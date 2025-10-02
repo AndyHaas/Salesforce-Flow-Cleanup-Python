@@ -83,15 +83,16 @@ python flow_cleanup.py
 The script will:
 
 1. Ask if you want to use a configuration file or interactive mode
-2. Ask for your Salesforce instance URL
-3. Ask for callback port (default 8080)
-4. Ask what type of cleanup you want to perform
-5. Start a local server and open your browser for authentication
-6. Automatically receive the OAuth callback
-7. Check if it's a production instance and require confirmation
-8. Query for Flow versions to delete
-9. Show you what will be deleted and ask for confirmation
-10. Perform the bulk deletion and report results
+2. Ask what type of cleanup you want to perform
+3. If specific flows: Ask for Flow API names to clean up
+4. Ask for your Salesforce instance URL
+5. Ask for callback port (default 8080)
+6. Start a local server and open your browser for authentication
+7. Automatically receive the OAuth callback
+8. Check if it's a production instance and require confirmation
+9. Query for Flow versions to delete
+10. Show you what will be deleted and ask for confirmation
+11. Perform the bulk deletion and report results
 
 ### Batch Mode
 
@@ -220,4 +221,3 @@ If port 8080 is already in use:
 ## Support
 
 For issues or questions, refer to the troubleshooting section above or check the generated log files for detailed error information.
-
