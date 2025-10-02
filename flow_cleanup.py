@@ -416,6 +416,7 @@ class SalesforceFlowCleanup:
                 
         finally:
             # Clean up server
+            print("🔄 Shutting down callback server...")
             server.shutdown()
             server.server_close()
     
@@ -611,63 +612,88 @@ class SalesforceFlowCleanup:
             return []
     
     def bulk_delete_flows(self, flow_ids: List[str]) -> Dict:
-        """Delete multiple Flow versions using composite API"""
+        """Delete multiple Flow versions using composite API with batching"""
         print(f"\n=== Deleting {len(flow_ids)} Flow Versions ===")
         print("🗑️  Preparing bulk delete request...")
         
-        # Build composite request
-        composite_request = {
-            "allOrNone": False,
-            "compositeRequest": []
-        }
+        # Salesforce Composite API limit is 25 operations per request
+        batch_size = 25
+        total_batches = (len(flow_ids) + batch_size - 1) // batch_size
         
-        for i, flow_id in enumerate(flow_ids):
-            composite_request["compositeRequest"].append({
-                "method": "DELETE",
-                "url": f"/services/data/{self.api_version}/tooling/sobjects/Flow/{flow_id}",
-                "referenceId": f"del{i+1}"
-            })
+        print(f"📦 Processing {len(flow_ids)} deletions in {total_batches} batch(es) of up to {batch_size} each")
         
-        # Send composite request
-        composite_url = f"{self.instance_url}/services/data/{self.api_version}/composite"
+        composite_url = f"{self.instance_url}/services/data/{self.api_version}/tooling/composite"
         headers = {
             'Authorization': f'Bearer {self.access_token}',
             'Content-Type': 'application/json'
         }
         
+        total_successful = 0
+        total_failed = 0
+        
         try:
-            print("📡 Sending delete request to Salesforce...")
-            self.log_message(f"Starting bulk delete of {len(flow_ids)} Flow versions")
-            response = requests.post(composite_url, json=composite_request, headers=headers)
-            response.raise_for_status()
+            self.log_message(f"Starting bulk delete of {len(flow_ids)} Flow versions in {total_batches} batches")
             
-            result = response.json()
-            print("✅ Delete request completed!")
-            
-            # Process results
-            successful_deletes = 0
-            failed_deletes = 0
-            
-            print("\n📋 Delete Results:")
-            for sub_response in result.get('compositeResponse', []):
-                ref_id = sub_response.get('referenceId', 'unknown')
-                status_code = sub_response.get('httpStatusCode', 0)
+            # Process in batches
+            for batch_num in range(total_batches):
+                start_idx = batch_num * batch_size
+                end_idx = min(start_idx + batch_size, len(flow_ids))
+                batch_flow_ids = flow_ids[start_idx:end_idx]
                 
-                if status_code == 204:  # Success
-                    successful_deletes += 1
-                    print(f"   ✅ {ref_id}: Successfully deleted")
-                else:
-                    failed_deletes += 1
-                    error_body = sub_response.get('body', [])
-                    print(f"   ❌ {ref_id}: Failed (Status: {status_code})")
-                    if error_body:
-                        print(f"      Error: {error_body}")
+                print(f"\n📦 Processing batch {batch_num + 1}/{total_batches} ({len(batch_flow_ids)} items)")
+                
+                # Build composite request for this batch
+                composite_request = {
+                    "allOrNone": False,
+                    "compositeRequest": []
+                }
+                
+                for i, flow_id in enumerate(batch_flow_ids):
+                    composite_request["compositeRequest"].append({
+                        "method": "DELETE",
+                        "url": f"/services/data/{self.api_version}/tooling/sobjects/Flow/{flow_id}",
+                        "referenceId": f"batch{batch_num + 1}_del{i + 1}"
+                    })
+                
+                # Send composite request for this batch
+                print(f"📡 Sending batch {batch_num + 1} delete request to Salesforce...")
+                response = requests.post(composite_url, json=composite_request, headers=headers)
+                response.raise_for_status()
+                
+                result = response.json()
+                print(f"✅ Batch {batch_num + 1} delete request completed!")
+                
+                # Process results for this batch
+                batch_successful = 0
+                batch_failed = 0
+                
+                print(f"\n📋 Batch {batch_num + 1} Results:")
+                for sub_response in result.get('compositeResponse', []):
+                    ref_id = sub_response.get('referenceId', 'unknown')
+                    status_code = sub_response.get('httpStatusCode', 0)
+                    
+                    if status_code == 204:  # Success
+                        batch_successful += 1
+                        print(f"   ✅ {ref_id}: Successfully deleted")
+                    else:
+                        batch_failed += 1
+                        error_body = sub_response.get('body', [])
+                        print(f"   ❌ {ref_id}: Failed (Status: {status_code})")
+                        if error_body:
+                            print(f"      Error: {error_body}")
+                
+                total_successful += batch_successful
+                total_failed += batch_failed
+                
+                print(f"📊 Batch {batch_num + 1} Summary: {batch_successful} successful, {batch_failed} failed")
             
-            print(f"\n📊 Summary: {successful_deletes} successful, {failed_deletes} failed")
-            self.log_message(f"Delete completed: {successful_deletes} successful, {failed_deletes} failed")
-            if successful_deletes > 0:
+            print(f"\n📊 Overall Summary: {total_successful} successful, {total_failed} failed")
+            self.log_message(f"Delete completed: {total_successful} successful, {total_failed} failed")
+            
+            if total_successful > 0:
                 print("🎉 Cleanup completed successfully!")
-            return result
+            
+            return {"total_successful": total_successful, "total_failed": total_failed}
             
         except requests.exceptions.RequestException as e:
             print(f"❌ Bulk delete failed: {e}")
@@ -849,6 +875,7 @@ if __name__ == "__main__":
         port = user_input.get('port', 8080)
         if cleanup.authenticate(user_input['instance'], port=port):
             # Check if this is a production instance
+            print("\n🔍 Checking instance type...")
             is_production = cleanup.check_if_production()
             
             if is_production:
