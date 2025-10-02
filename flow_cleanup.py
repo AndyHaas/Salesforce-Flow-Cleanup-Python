@@ -253,9 +253,29 @@ class SalesforceFlowCleanup:
         
         choice = input("Enter your choice (1 or 2): ").strip()
         
+        # If specific flows, get the flow names now
+        flow_names = []
+        if choice == "2":
+            print("\n=== Specific Flow Selection ===")
+            print("Enter the API names of the Flows you want to clean up.")
+            print("(Press Enter on an empty line when done)")
+            
+            while True:
+                flow_name = input("Flow API name: ").strip()
+                if not flow_name:
+                    break
+                flow_names.append(flow_name)
+            
+            if not flow_names:
+                print("❌ No Flow names provided. Exiting.")
+                sys.exit(1)
+            
+            print(f"✅ Selected {len(flow_names)} Flow(s): {', '.join(flow_names)}")
+        
         return {
             'instance': instance,
             'cleanup_type': choice,
+            'flow_names': flow_names,
             'port': port,
             'mode': 'interactive'
         }
@@ -721,19 +741,6 @@ class SalesforceFlowCleanup:
             # Specific Flow versions
             print("📋 Option selected: Clean up specific Flow versions")
             flow_names = user_input.get('flow_names', [])
-            if not flow_names:
-                flow_names_input = input("\nEnter Flow names (comma-separated): ").strip()
-                if not flow_names_input:
-                    print("❌ No Flow names provided. Operation cancelled.")
-                    self.log_message("Operation cancelled: No Flow names provided")
-                    return
-                
-                flow_names = [name.strip() for name in flow_names_input.split(',') if name.strip()]
-                if not flow_names:
-                    print("❌ No valid Flow names provided. Operation cancelled.")
-                    self.log_message("Operation cancelled: No valid Flow names provided")
-                    return
-            
             print(f"🎯 Looking for old versions of: {', '.join(flow_names)}")
             flows_to_delete = self.query_specific_flows(flow_names)
         
