@@ -1,0 +1,10 @@
+# Ignore log files and deletion lists
+flow_cleanup_*.log
+flows_to_delete_*.json
+
+# Ignore custom config files (users should not commit them)
+config*.json
+
+# Python stuff
+__pycache__/
+*.pyc
