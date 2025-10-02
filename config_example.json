@@ -1,0 +1,34 @@
+{
+  "orgs": [
+    {
+      "instance": "https://yourcompany--sandbox1.my.salesforce.com",
+      "client_id": "your_client_id_here",
+      "client_secret": "",
+      "cleanup_type": "1",
+      "flow_names": [],
+      "skip_production_check": false,
+      "auto_confirm_production": false,
+      "callback_port": 8080
+    },
+    {
+      "instance": "https://yourcompany--dev.sandbox.my.salesforce.com",
+      "client_id": "your_client_id_here",
+      "client_secret": "",
+      "cleanup_type": "2",
+      "flow_names": ["MyFlow", "AccountFlow"],
+      "skip_production_check": false,
+      "auto_confirm_production": false,
+      "callback_port": 8081
+    },
+    {
+      "instance": "https://yourcompany.my.salesforce.com",
+      "client_id": "your_client_id_here",
+      "client_secret": "your_client_secret_here",
+      "cleanup_type": "1",
+      "flow_names": [],
+      "skip_production_check": false,
+      "auto_confirm_production": true,
+      "callback_port": 8080
+    }
+  ]
+}
