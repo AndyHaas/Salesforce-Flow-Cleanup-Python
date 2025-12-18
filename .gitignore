@@ -5,9 +5,13 @@ logs/
 deletion_lists/
 
 # Ignore configs folder (contains sensitive credentials)
-# But allow config_example.json to be tracked (it's a template)
+# But allow config_example.json and README.md to be tracked (templates/documentation)
 configs/*
 !configs/config_example.json
+!configs/README.md
+
+# Temporary folder for personal configs (during setup)
+.temp_configs/
 
 # Python stuff
 __pycache__/
