@@ -24,6 +24,22 @@ A comprehensive Python tool for cleaning up old Flow versions in Salesforce orgs
 - **`requirements.txt`** - Python dependencies
 - **`README.md`** - This documentation
 
+## Folder Structure
+
+The tool organizes files into specific folders:
+
+- **`configs/`** - Configuration files (ignored by git, contains sensitive credentials)
+  - Store your custom configuration files here
+  - Example: `configs/config_production.json`, `configs/config_qa.json`
+- **`logs/`** - Log files (ignored by git)
+  - All log files are automatically saved here
+  - Format: `logs/flow_cleanup_YYYYMMDD_HHMMSS.log`
+- **`deletion_lists/`** - Deletion list files (ignored by git)
+  - JSON files listing flows to be deleted are saved here
+  - Format: `deletion_lists/flows_to_delete_YYYYMMDD_HHMMSS.json`
+- **`venv/`** - Python virtual environment (ignored by git)
+  - Created when setting up the project
+
 ## Quick Start
 
 ### Interactive Mode
@@ -34,9 +50,9 @@ python flow_cleanup.py
 
 ### Batch Mode
 
-1. Create a configuration file based on `config_example.json`
+1. Create a configuration file based on `config_example.json` and save it in the `configs/` folder
 2. Run the script and select configuration file mode
-3. Specify your configuration file path
+3. Choose from existing configs in `configs/` folder or specify a custom path
 
 ## Port Configuration
 
@@ -83,6 +99,7 @@ python flow_cleanup.py
 The script will:
 
 1. Ask if you want to use a configuration file or interactive mode
+   - If using config: Lists available configs from `configs/` folder or allows custom path
 2. Ask what type of cleanup you want to perform
 3. If specific flows: Ask for Flow API names to clean up
 4. Ask for your Salesforce instance URL
@@ -93,10 +110,14 @@ The script will:
 9. Query for Flow versions to delete
 10. Show you what will be deleted and ask for confirmation
 11. Perform the bulk deletion and report results
+12. **Offer to save configuration** - After cleanup, you can save your settings:
+    - Add to an existing config file in `configs/` folder
+    - Create a new config file with a custom name
+    - Auto-generate a filename based on your instance URL
 
 ### Batch Mode
 
-Create a configuration file (see `config_example.json`):
+Create a configuration file in the `configs/` folder (see `config_example.json` for format):
 
 ```json
 {
@@ -120,6 +141,12 @@ Run the script and select configuration file mode:
 ```bash
 python flow_cleanup.py
 ```
+
+When prompted, you can:
+- Select from existing config files in the `configs/` folder (numbered list)
+- Enter a custom path to a configuration file
+
+**Tip**: After running interactive mode, you can save your configuration for future batch runs!
 
 #### Configuration File Options
 
@@ -180,14 +207,36 @@ If port 8080 is already in use:
 
 ## Generated Files
 
-- **Log files**: `flow_cleanup_YYYYMMDD_HHMMSS.log` - Complete audit trail with masked sensitive data
-- **Deletion lists**: `flows_to_delete_YYYYMMDD_HHMMSS.json` - JSON file with flows to be deleted
-- **Configuration files**: Custom JSON files for batch processing with per-org settings
+All generated files are automatically organized into folders:
+
+- **Log files**: `logs/flow_cleanup_YYYYMMDD_HHMMSS.log` - Complete audit trail with masked sensitive data
+- **Deletion lists**: `deletion_lists/flows_to_delete_YYYYMMDD_HHMMSS.json` - JSON file with flows to be deleted
+- **Configuration files**: `configs/config_*.json` - Custom JSON files for batch processing with per-org settings
+
+**Note**: All folders (`configs/`, `logs/`, `deletion_lists/`, `venv/`) are ignored by git to protect sensitive data and avoid committing generated files.
+
+## Saving Configurations
+
+After completing cleanup in interactive mode, the tool offers to save your configuration:
+
+1. **Save to existing config**: Add this org to an existing config file in `configs/` folder
+2. **Create new config**: Create a new config file with a custom name
+3. **Auto-named config**: Automatically generate a filename based on your instance URL
+
+Saved configurations include:
+- Instance URL
+- Client ID and Secret (if provided)
+- Cleanup type and flow names
+- Production settings
+- Callback port
+
+This makes it easy to build up a collection of configurations for different orgs and reuse them in batch mode.
 
 ## Security
 
 - All sensitive data (client IDs, secrets, auth codes) are masked in logs
-- No credentials are stored in plain text
+- Configuration files with credentials are stored in `configs/` folder (ignored by git)
+- Logs and deletion lists are stored in separate folders (ignored by git)
 - Comprehensive audit trails for compliance
 - Production safety checks and confirmations
 
