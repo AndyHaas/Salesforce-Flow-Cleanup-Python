@@ -82,6 +82,49 @@ class SalesforceFlowCleanup:
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.client_id = None
         self.client_secret = None
+        # Ensure configs folder exists and move any root config files
+        self.ensure_configs_folder()
+        
+    def ensure_configs_folder(self):
+        """Ensure configs folder exists and move any config files from root for security"""
+        configs_dir = "configs"
+        os.makedirs(configs_dir, exist_ok=True)
+        
+        # Find config files in root directory
+        moved_files = []
+        for filename in os.listdir('.'):
+            if filename.startswith('config') and filename.endswith('.json') and os.path.isfile(filename):
+                source_path = filename
+                dest_path = os.path.join(configs_dir, filename)
+                
+                # Move the file
+                try:
+                    # If destination exists, rename with timestamp
+                    if os.path.exists(dest_path):
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        name, ext = os.path.splitext(filename)
+                        dest_path = os.path.join(configs_dir, f"{name}_{timestamp}{ext}")
+                    
+                    os.rename(source_path, dest_path)
+                    moved_files.append((filename, dest_path))
+                except Exception as e:
+                    print(f"⚠️  Warning: Could not move {filename}: {e}")
+        
+        # Display message if files were moved
+        if moved_files:
+            print("="*60)
+            print("🔒 SECURITY: Configuration Files Moved")
+            print("="*60)
+            print("The following configuration files were found in the root directory")
+            print("and have been automatically moved to the 'configs/' folder:")
+            print()
+            for filename, dest_path in moved_files:
+                print(f"  • {filename} → {dest_path}")
+            print()
+            print("This ensures your configuration files with sensitive credentials")
+            print("will never be accidentally committed to git.")
+            print("="*60)
+            print()
         
     def setup_logging(self):
         """Setup logging to file with masked sensitive information"""

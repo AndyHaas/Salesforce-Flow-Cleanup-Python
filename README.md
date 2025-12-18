@@ -20,7 +20,7 @@ A comprehensive Python tool for cleaning up old Flow versions in Salesforce orgs
 ## Files
 
 - **`flow_cleanup.py`** - Main script (supports both interactive and batch modes)
-- **`config_example.json`** - Example configuration file for batch processing
+- **`configs/config_example.json`** - Example configuration file for batch processing
 - **`requirements.txt`** - Python dependencies
 - **`README.md`** - This documentation
 
@@ -31,6 +31,8 @@ The tool organizes files into specific folders:
 - **`configs/`** - Configuration files (ignored by git, contains sensitive credentials)
   - Store your custom configuration files here
   - Example: `configs/config_production.json`, `configs/config_qa.json`
+  - **Note**: The script automatically moves any config files found in the root directory to this folder for security
+  - Example template: `configs/config_example.json`
 - **`logs/`** - Log files (ignored by git)
   - All log files are automatically saved here
   - Format: `logs/flow_cleanup_YYYYMMDD_HHMMSS.log`
@@ -117,7 +119,7 @@ The script will:
 
 ### Batch Mode
 
-Create a configuration file in the `configs/` folder (see `config_example.json` for format):
+Create a configuration file in the `configs/` folder (see `configs/config_example.json` for format):
 
 ```json
 {

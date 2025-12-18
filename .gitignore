@@ -5,7 +5,9 @@ logs/
 deletion_lists/
 
 # Ignore configs folder (contains sensitive credentials)
-configs/
+# But allow config_example.json to be tracked (it's a template)
+configs/*
+!configs/config_example.json
 
 # Python stuff
 __pycache__/
