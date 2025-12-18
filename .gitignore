@@ -1,6 +1,5 @@
-# Ignore log files and deletion lists
-flow_cleanup_*.log
-flows_to_delete_*.json
+# Ignore logs folder (contains log files and deletion lists)
+logs/
 
 # Ignore configs folder (contains sensitive credentials)
 configs/

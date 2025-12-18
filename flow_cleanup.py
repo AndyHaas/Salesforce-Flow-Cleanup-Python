@@ -83,7 +83,11 @@ class SalesforceFlowCleanup:
         
     def setup_logging(self):
         """Setup logging to file with masked sensitive information"""
-        log_filename = f"flow_cleanup_{self.session_id}.log"
+        # Ensure logs directory exists
+        logs_dir = "logs"
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        log_filename = os.path.join(logs_dir, f"flow_cleanup_{self.session_id}.log")
         self.log_file = log_filename
         
         # Create initial log entry
@@ -136,7 +140,11 @@ class SalesforceFlowCleanup:
         if not flows_to_delete:
             return None
         
-        filename = f"flows_to_delete_{self.session_id}.json"
+        # Ensure logs directory exists
+        logs_dir = "logs"
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        filename = os.path.join(logs_dir, f"flows_to_delete_{self.session_id}.json")
         
         # Prepare data for saving (remove sensitive info)
         save_data = {
