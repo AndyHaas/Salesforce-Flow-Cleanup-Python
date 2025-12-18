@@ -80,6 +80,8 @@ class SalesforceFlowCleanup:
         self.api_version = "v60.0"
         self.log_file = None
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.client_id = None
+        self.client_secret = None
         
     def setup_logging(self):
         """Setup logging to file with masked sensitive information"""
@@ -210,6 +212,122 @@ class SalesforceFlowCleanup:
             print(f"❌ Configuration validation error: {e}")
             return None
     
+    def list_existing_configs(self) -> List[str]:
+        """List existing config files in the configs directory"""
+        configs_dir = "configs"
+        if not os.path.exists(configs_dir):
+            return []
+        
+        config_files = []
+        for filename in os.listdir(configs_dir):
+            if filename.endswith('.json') and filename != 'config_example.json':
+                config_files.append(filename)
+        
+        return sorted(config_files)
+    
+    def save_config(self, user_input: Dict, config_filename: str = None, add_to_existing: bool = False) -> bool:
+        """Save configuration to a file"""
+        # Ensure configs directory exists
+        configs_dir = "configs"
+        os.makedirs(configs_dir, exist_ok=True)
+        
+        # Determine filename
+        if config_filename:
+            if not config_filename.endswith('.json'):
+                config_filename += '.json'
+            config_path = os.path.join(configs_dir, config_filename)
+        else:
+            # Generate default name
+            instance_name = user_input['instance'].replace('https://', '').replace('.my.salesforce.com', '').replace('--', '_')
+            config_filename = f"config_{instance_name}.json"
+            config_path = os.path.join(configs_dir, config_filename)
+        
+        # Prepare org configuration
+        org_config = {
+            "instance": user_input['instance'],
+            "client_id": self.client_id or "",
+            "client_secret": self.client_secret or "",
+            "cleanup_type": user_input['cleanup_type'],
+            "flow_names": user_input.get('flow_names', []),
+            "skip_production_check": False,
+            "auto_confirm_production": user_input.get('is_production', False),
+            "callback_port": user_input.get('port', 8080)
+        }
+        
+        # Load existing config or create new
+        if add_to_existing and os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                # Add new org to existing config
+                config['orgs'].append(org_config)
+            except (FileNotFoundError, json.JSONDecodeError):
+                # If file exists but can't be read, create new
+                config = {"orgs": [org_config]}
+        else:
+            # Create new config
+            config = {"orgs": [org_config]}
+        
+        # Save config
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+            print(f"✅ Configuration saved to: {config_path}")
+            return True
+        except Exception as e:
+            print(f"❌ Failed to save configuration: {e}")
+            return False
+    
+    def offer_save_config(self, user_input: Dict) -> None:
+        """Offer to save configuration after interactive mode"""
+        if not self.client_id:
+            # No credentials to save
+            return
+        
+        print("\n" + "="*60)
+        print("💾 Save Configuration")
+        print("="*60)
+        save_choice = input("Would you like to save this configuration for future use? (y/n): ").strip().lower()
+        
+        if save_choice not in ['y', 'yes']:
+            return
+        
+        # List existing configs
+        existing_configs = self.list_existing_configs()
+        
+        if existing_configs:
+            print("\nExisting configuration files:")
+            for i, config_file in enumerate(existing_configs, 1):
+                print(f"  {i}. {config_file}")
+            print(f"  {len(existing_configs) + 1}. Create new configuration file")
+            
+            choice = input(f"\nSelect option (1-{len(existing_configs) + 1}): ").strip()
+            
+            try:
+                choice_num = int(choice)
+                if 1 <= choice_num <= len(existing_configs):
+                    # Add to existing config
+                    config_filename = existing_configs[choice_num - 1]
+                    self.save_config(user_input, config_filename, add_to_existing=True)
+                elif choice_num == len(existing_configs) + 1:
+                    # Create new config
+                    config_name = input("Enter name for new configuration file (without .json): ").strip()
+                    if config_name:
+                        self.save_config(user_input, config_name, add_to_existing=False)
+                    else:
+                        print("❌ No name provided. Configuration not saved.")
+                else:
+                    print("❌ Invalid choice. Configuration not saved.")
+            except ValueError:
+                print("❌ Invalid input. Configuration not saved.")
+        else:
+            # No existing configs, create new
+            config_name = input("Enter name for configuration file (without .json, or press Enter for default): ").strip()
+            if config_name:
+                self.save_config(user_input, config_name, add_to_existing=False)
+            else:
+                self.save_config(user_input, add_to_existing=False)
+    
     def get_user_input(self) -> Dict[str, str]:
         """Get user input for instance and cleanup options"""
         print("=== Salesforce Flow Version Cleanup Tool ===\n")
@@ -217,12 +335,36 @@ class SalesforceFlowCleanup:
         # Check if user wants to use config file
         use_config = input("Do you want to use a configuration file? (y/n): ").strip().lower()
         if use_config in ['y', 'yes']:
-            config_file = input("Enter path to configuration file: ").strip()
-            config = self.load_config_file(config_file)
-            if config:
-                return {'config': config, 'mode': 'batch'}
+            # List existing configs
+            existing_configs = self.list_existing_configs()
+            if existing_configs:
+                print("\nAvailable configuration files:")
+                for i, config_file in enumerate(existing_configs, 1):
+                    print(f"  {i}. {config_file}")
+                print(f"  {len(existing_configs) + 1}. Enter custom path")
+                
+                choice = input(f"\nSelect option (1-{len(existing_configs) + 1}): ").strip()
+                try:
+                    choice_num = int(choice)
+                    if 1 <= choice_num <= len(existing_configs):
+                        config_file = os.path.join("configs", existing_configs[choice_num - 1])
+                    elif choice_num == len(existing_configs) + 1:
+                        config_file = input("Enter path to configuration file: ").strip()
+                    else:
+                        print("❌ Invalid choice. Falling back to interactive mode...")
+                        config_file = None
+                except ValueError:
+                    print("❌ Invalid input. Falling back to interactive mode...")
+                    config_file = None
             else:
-                print("Falling back to interactive mode...")
+                config_file = input("Enter path to configuration file: ").strip()
+            
+            if config_file:
+                config = self.load_config_file(config_file)
+                if config:
+                    return {'config': config, 'mode': 'batch'}
+                else:
+                    print("Falling back to interactive mode...")
         
         # Interactive mode
         # Get Salesforce instance
@@ -314,9 +456,15 @@ class SalesforceFlowCleanup:
             if not client_id:
                 self.log_message("Authentication failed: No client ID provided")
                 return False
+            # Store credentials for potential config saving
+            self.client_id = client_id
+            self.client_secret = client_secret
         else:
             if not silent:
                 print("Using provided client credentials...")
+            # Store credentials for potential config saving
+            self.client_id = client_id
+            self.client_secret = client_secret
         
         self.log_message(f"Authentication started for instance: {instance_url}")
         self.log_message(f"Client ID provided: {client_id[:8]}...")
@@ -906,6 +1054,9 @@ if __name__ == "__main__":
             
             print("Ready to proceed with cleanup...")
             cleanup.run_cleanup(user_input)
+            
+            # Offer to save configuration
+            cleanup.offer_save_config(user_input)
         else:
             print("Authentication failed. Exiting.")
             cleanup.log_message("Authentication failed. Exiting.")
