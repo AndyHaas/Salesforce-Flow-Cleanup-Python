@@ -1,5 +1,8 @@
-# Ignore logs folder (contains log files and deletion lists)
+# Ignore logs folder (contains log files)
 logs/
+
+# Ignore deletion_lists folder (contains flow deletion lists)
+deletion_lists/
 
 # Ignore configs folder (contains sensitive credentials)
 configs/

@@ -140,11 +140,11 @@ class SalesforceFlowCleanup:
         if not flows_to_delete:
             return None
         
-        # Ensure logs directory exists
-        logs_dir = "logs"
-        os.makedirs(logs_dir, exist_ok=True)
+        # Ensure deletion_lists directory exists
+        deletion_lists_dir = "deletion_lists"
+        os.makedirs(deletion_lists_dir, exist_ok=True)
         
-        filename = os.path.join(logs_dir, f"flows_to_delete_{self.session_id}.json")
+        filename = os.path.join(deletion_lists_dir, f"flows_to_delete_{self.session_id}.json")
         
         # Prepare data for saving (remove sensitive info)
         save_data = {
