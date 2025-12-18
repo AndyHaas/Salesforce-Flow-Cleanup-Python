@@ -2,8 +2,8 @@
 flow_cleanup_*.log
 flows_to_delete_*.json
 
-# Ignore custom config files (users should not commit them)
-config*.json
+# Ignore configs folder (contains sensitive credentials)
+configs/
 
 # Python stuff
 __pycache__/
