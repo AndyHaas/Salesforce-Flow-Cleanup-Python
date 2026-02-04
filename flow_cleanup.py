@@ -18,6 +18,7 @@ import webbrowser
 import json
 import urllib.parse
 import sys
+import argparse
 import base64
 import hashlib
 import secrets
@@ -28,7 +29,7 @@ import os
 import re
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 class CallbackHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -371,57 +372,133 @@ class SalesforceFlowCleanup:
             else:
                 self.save_config(user_input, add_to_existing=False)
     
-    def get_user_input(self) -> Dict[str, str]:
-        """Get user input for instance and cleanup options"""
+    def prompt_cleanup_options(self, defaults: Dict = None) -> Tuple[str, List[str]]:
+        """Prompt for cleanup type and flow scope. Used when not --silent.
+        defaults: optional dict with 'cleanup_type' and 'flow_names' to show as current/defaults."""
+        defaults = defaults or {}
+        default_type = defaults.get('cleanup_type', '1')
+        default_flows = defaults.get('flow_names', [])
+        
+        print("\n=== Cleanup Options ===")
+        print("What type of cleanup do you want to do?")
+        print("1. All old Flow versions (not latest and not active)")
+        print("2. Specific Flows only (you'll provide the Flow API names)")
+        print("3. Browse flows with old versions (select from list after connecting)")
+        
+        type_prompt = "Enter your choice (1, 2, or 3)"
+        if default_type:
+            type_prompt += f" [default: {default_type}]"
+        type_prompt += ": "
+        
+        choice = input(type_prompt).strip() or default_type
+        if choice not in ('1', '2', '3'):
+            choice = '1'
+        
+        flow_names = []
+        if choice == "2":
+            print("\n=== Specific Flow Selection ===")
+            print("Enter the API names of the Flows you want to clean up.")
+            if default_flows:
+                print(f"(Current in config: {', '.join(default_flows)})")
+            print("(Press Enter on an empty line when done)")
+            
+            while True:
+                flow_name = input("Flow API name: ").strip()
+                if not flow_name:
+                    break
+                flow_names.append(flow_name)
+            
+            if not flow_names and default_flows:
+                flow_names = default_flows
+            if not flow_names:
+                print("❌ No Flow names provided. Exiting.")
+                sys.exit(1)
+            
+            print(f"✅ Selected {len(flow_names)} Flow(s): {', '.join(flow_names)}")
+        
+        return choice, flow_names
+    
+    def get_user_input(self, silent: bool = False, config_path: str = None) -> Dict[str, str]:
+        """Get user input for instance and cleanup options.
+        When silent=True, config_path must be provided; config is used as-is (headless).
+        When silent=False, user is prompted for all options (cleanup type, all/specific flows, etc.)."""
         print("=== Salesforce Flow Version Cleanup Tool ===\n")
         
-        # Check if user wants to use config file
-        use_config = input("Do you want to use a configuration file? (y/n): ").strip().lower()
-        if use_config in ['y', 'yes']:
-            # List existing configs
-            existing_configs = self.list_existing_configs()
-            if existing_configs:
-                print("\nAvailable configuration files:")
-                for i, config_file in enumerate(existing_configs, 1):
-                    print(f"  {i}. {config_file}")
-                print(f"  {len(existing_configs) + 1}. Enter custom path")
-                
-                choice = input(f"\nSelect option (1-{len(existing_configs) + 1}): ").strip()
-                try:
-                    choice_num = int(choice)
-                    if 1 <= choice_num <= len(existing_configs):
-                        config_file = os.path.join("configs", existing_configs[choice_num - 1])
-                    elif choice_num == len(existing_configs) + 1:
-                        config_file = input("Enter path to configuration file: ").strip()
-                    else:
-                        print("❌ Invalid choice. Falling back to interactive mode...")
+        # Headless: require config, no prompts
+        if silent:
+            if not config_path:
+                print("❌ --silent requires a config file. Use: python flow_cleanup.py --silent --config configs/your_config.json")
+                sys.exit(1)
+            path_to_load = config_path
+            if not os.path.isabs(config_path) and not os.path.isfile(config_path):
+                path_to_load = os.path.join("configs", config_path)
+            config = self.load_config_file(path_to_load)
+            if not config:
+                sys.exit(1)
+            return {'config': config, 'mode': 'batch', 'silent': True}
+        
+        # Not silent: config file is optional; if used, we still prompt for cleanup options
+        use_config = False
+        config_file = config_path
+        
+        if not config_file:
+            use_config_choice = input("Do you want to use a configuration file? (y/n): ").strip().lower()
+            use_config = use_config_choice in ['y', 'yes']
+        
+        if use_config or config_file:
+            if not config_file:
+                existing_configs = self.list_existing_configs()
+                if existing_configs:
+                    print("\nAvailable configuration files:")
+                    for i, cfg in enumerate(existing_configs, 1):
+                        print(f"  {i}. {cfg}")
+                    print(f"  {len(existing_configs) + 1}. Enter custom path")
+                    choice = input(f"\nSelect option (1-{len(existing_configs) + 1}): ").strip()
+                    try:
+                        choice_num = int(choice)
+                        if 1 <= choice_num <= len(existing_configs):
+                            config_file = os.path.join("configs", existing_configs[choice_num - 1])
+                        elif choice_num == len(existing_configs) + 1:
+                            config_file = input("Enter path to configuration file: ").strip()
+                        else:
+                            config_file = None
+                    except ValueError:
                         config_file = None
-                except ValueError:
-                    print("❌ Invalid input. Falling back to interactive mode...")
-                    config_file = None
-            else:
-                config_file = input("Enter path to configuration file: ").strip()
+                else:
+                    config_file = input("Enter path to configuration file: ").strip()
             
             if config_file:
-                config = self.load_config_file(config_file)
+                path_to_load = config_file
+                if not os.path.isabs(config_file) and not os.path.isfile(config_file):
+                    path_to_load = os.path.join("configs", config_file)
+                config = self.load_config_file(path_to_load)
                 if config:
-                    return {'config': config, 'mode': 'batch'}
-                else:
+                    # Prompt for cleanup options (anything in config should be asked when not silent)
+                    first_org = config['orgs'][0]
+                    cleanup_type, flow_names = self.prompt_cleanup_options({
+                        'cleanup_type': first_org.get('cleanup_type', '1'),
+                        'flow_names': first_org.get('flow_names', [])
+                    })
+                    return {
+                        'config': config,
+                        'mode': 'batch',
+                        'cleanup_type': cleanup_type,
+                        'flow_names': flow_names,
+                        'silent': False
+                    }
+                if not config:
                     print("Falling back to interactive mode...")
         
-        # Interactive mode
-        # Get Salesforce instance
+        # Interactive mode: no config or load failed — ask for everything
         instance = input("Enter your Salesforce instance URL (e.g., mycompany.my.salesforce.com): ").strip()
         if not instance.startswith('http'):
             instance = f"https://{instance}"
         if not instance.endswith('.my.salesforce.com'):
             instance = f"{instance}.my.salesforce.com"
         
-        # Get callback port
         print("\n=== OAuth Callback Configuration ===")
         print("The script will start a local server to receive OAuth callbacks.")
         print("Default port: 8080")
-        
         port_input = input("Enter callback port (press Enter for default 8080): ").strip()
         if port_input:
             try:
@@ -434,43 +511,19 @@ class SalesforceFlowCleanup:
                     print("⚠️  IMPORTANT: Update your Salesforce Connected App callback URL to:")
                     print(f"   http://localhost:{port}/callback")
             except ValueError:
-                print("❌ Invalid port number. Using default 8080.")
                 port = 8080
         else:
             port = 8080
         
-        # Get cleanup scope
-        print("\nWhat would you like to clean up?")
-        print("1. All old Flow versions (not latest and not active)")
-        print("2. Specific Flow versions (you'll provide the Flow names)")
-        
-        choice = input("Enter your choice (1 or 2): ").strip()
-        
-        # If specific flows, get the flow names now
-        flow_names = []
-        if choice == "2":
-            print("\n=== Specific Flow Selection ===")
-            print("Enter the API names of the Flows you want to clean up.")
-            print("(Press Enter on an empty line when done)")
-            
-            while True:
-                flow_name = input("Flow API name: ").strip()
-                if not flow_name:
-                    break
-                flow_names.append(flow_name)
-            
-            if not flow_names:
-                print("❌ No Flow names provided. Exiting.")
-                sys.exit(1)
-            
-            print(f"✅ Selected {len(flow_names)} Flow(s): {', '.join(flow_names)}")
+        cleanup_type, flow_names = self.prompt_cleanup_options()
         
         return {
             'instance': instance,
-            'cleanup_type': choice,
+            'cleanup_type': cleanup_type,
             'flow_names': flow_names,
             'port': port,
-            'mode': 'interactive'
+            'mode': 'interactive',
+            'silent': False
         }
     
     def get_client_credentials(self) -> tuple:
@@ -757,6 +810,117 @@ class SalesforceFlowCleanup:
                     self.log_message(f"Query failed: {e.response.text}")
             return []
     
+    def list_flows_with_old_version_counts(self) -> List[Dict]:
+        """Query for distinct flows that have old versions, with count of versions that would be deleted.
+        Returns list of dicts: [{"developer_name": str, "count": int, "master_label": str}, ...]"""
+        print("\n=== Listing Flows with Old Versions ===")
+        print("🔍 Finding flows that have old versions to delete...")
+        
+        soql_query = "SELECT Id, VersionNumber, DefinitionId, Definition.DeveloperName, Definition.MasterLabel FROM Flow WHERE Status != 'Active' ORDER BY Definition.DeveloperName, VersionNumber DESC"
+        query_url = f"{self.instance_url}/services/data/{self.api_version}/tooling/query"
+        params = {'q': soql_query}
+        headers = {
+            'Authorization': f'Bearer {self.access_token}',
+            'Content-Type': 'application/json'
+        }
+        
+        try:
+            self.log_message("Querying flows for browse list")
+            response = requests.get(query_url, params=params, headers=headers)
+            response.raise_for_status()
+            result = response.json()
+            all_flows = result.get('records', [])
+            
+            # Find latest version per definition
+            definition_latest = {}
+            for flow in all_flows:
+                def_id = flow['DefinitionId']
+                ver = flow['VersionNumber']
+                if def_id not in definition_latest or ver > definition_latest[def_id]:
+                    definition_latest[def_id] = ver
+            
+            # Count old (deletable) versions per definition and collect distinct flow info
+            definition_counts = {}
+            definition_labels = {}
+            for flow in all_flows:
+                def_id = flow['DefinitionId']
+                if flow['VersionNumber'] < definition_latest[def_id]:
+                    definition_counts[def_id] = definition_counts.get(def_id, 0) + 1
+                    definition_labels[def_id] = (
+                        flow['Definition']['DeveloperName'],
+                        flow['Definition'].get('MasterLabel') or flow['Definition']['DeveloperName']
+                    )
+            
+            flow_list = []
+            for def_id, count in definition_counts.items():
+                dev_name, master_label = definition_labels[def_id]
+                flow_list.append({
+                    'developer_name': dev_name,
+                    'count': count,
+                    'master_label': master_label
+                })
+            flow_list.sort(key=lambda x: x['developer_name'].lower())
+            
+            print(f"✅ Found {len(flow_list)} flow(s) with old versions")
+            self.log_message(f"Browse list: {len(flow_list)} flows with old versions")
+            return flow_list
+            
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Query failed: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_detail = e.response.json()
+                    self.log_message(f"Browse list query failed: {error_detail}")
+                except Exception:
+                    self.log_message(f"Browse list query failed: {e.response.text}")
+            return []
+    
+    def prompt_flow_selection_from_list(self, flow_list: List[Dict]) -> List[str]:
+        """Display numbered list of flows with version counts; prompt user to select by number.
+        Accepts input like '1,3,5' or '1 3 5' or 'all'. Returns list of flow developer names."""
+        if not flow_list:
+            return []
+        
+        print("\n=== Select Flows to Clean Up ===")
+        print("Flows with old versions (number = versions that will be deleted):")
+        print()
+        for i, item in enumerate(flow_list, 1):
+            print(f"  {i:3d}. {item['developer_name']} ({item['count']} version{'s' if item['count'] != 1 else ''})")
+        print()
+        print("Enter the number(s) to clean up, separated by commas or spaces (e.g. 1,3,5 or 1 3 5), or 'all':")
+        
+        raw = input("Selection: ").strip().lower()
+        if not raw:
+            print("❌ No selection entered. Exiting.")
+            return []
+        
+        if raw == 'all':
+            return [item['developer_name'] for item in flow_list]
+        
+        # Parse numbers: allow "1,3,5" or "1 3 5" or "1, 3, 5"
+        parts = re.split(r'[\s,]+', raw)
+        indices = set()
+        for p in parts:
+            p = p.strip()
+            if not p:
+                continue
+            try:
+                num = int(p)
+                if 1 <= num <= len(flow_list):
+                    indices.add(num - 1)
+                else:
+                    print(f"⚠️  Ignoring out-of-range number: {num}")
+            except ValueError:
+                print(f"⚠️  Ignoring non-numeric input: {p}")
+        
+        if not indices:
+            print("❌ No valid selection. Exiting.")
+            return []
+        
+        selected = [flow_list[i]['developer_name'] for i in sorted(indices)]
+        print(f"✅ Selected {len(selected)} flow(s): {', '.join(selected)}")
+        return selected
+    
     def query_specific_flows(self, flow_names: List[str]) -> List[Dict]:
         """Query for specific Flow versions by name"""
         print(f"\n=== Querying Specific Flows: {', '.join(flow_names)} ===")
@@ -926,11 +1090,12 @@ class SalesforceFlowCleanup:
                     self.log_message(f"Bulk delete failed: {e.response.text}")
             return {}
     
-    def run_cleanup(self, user_input: Dict):
-        """Main cleanup execution"""
+    def run_cleanup(self, user_input: Dict) -> Optional[List[str]]:
+        """Main cleanup execution. Returns selected flow names when cleanup_type is '3' (browse), else None."""
         print("\n🚀 Starting Flow cleanup process...")
         self.log_message("Starting Flow cleanup process")
         flows_to_delete = []
+        selected_flow_names = None  # Used for type 3 so batch can reuse selection
         
         if user_input['cleanup_type'] == '1':
             # All old Flow versions
@@ -942,6 +1107,21 @@ class SalesforceFlowCleanup:
             flow_names = user_input.get('flow_names', [])
             print(f"🎯 Looking for old versions of: {', '.join(flow_names)}")
             flows_to_delete = self.query_specific_flows(flow_names)
+        elif user_input['cleanup_type'] == '3':
+            # Browse: list flows with counts, user selects by number
+            print("📋 Option selected: Browse flows and select from list")
+            flow_list = self.list_flows_with_old_version_counts()
+            if not flow_list:
+                print("\n✨ No flows with old versions found.")
+                self.log_message("Browse: no flows with old versions")
+                return
+            flow_names = self.prompt_flow_selection_from_list(flow_list)
+            if not flow_names:
+                return None
+            selected_flow_names = flow_names
+            flows_to_delete = self.query_specific_flows(flow_names)
+        else:
+            flows_to_delete = []
         
         if not flows_to_delete:
             print("\n✨ No Flow versions found to delete.")
@@ -950,7 +1130,7 @@ class SalesforceFlowCleanup:
             print("   - All Flow versions are currently active")
             print("   - No Flows exist in this org")
             self.log_message("No Flow versions found to delete")
-            return
+            return selected_flow_names
         
         # Save deletion list to file
         print(f"\n💾 Saving deletion list to file...")
@@ -978,7 +1158,7 @@ class SalesforceFlowCleanup:
         if confirm != 'DELETE':
             print("❌ Operation cancelled by user.")
             self.log_message("Operation cancelled by user")
-            return
+            return selected_flow_names
         
         print(f"\n🎯 Proceeding with deletion of {len(flows_to_delete)} Flow versions...")
         self.log_message(f"User confirmed deletion of {len(flows_to_delete)} Flow versions")
@@ -988,9 +1168,12 @@ class SalesforceFlowCleanup:
         
         # Perform bulk delete
         self.bulk_delete_flows(flow_ids)
+        return selected_flow_names
     
-    def run_batch_cleanup(self, config: Dict):
-        """Run cleanup for multiple orgs from configuration file"""
+    def run_batch_cleanup(self, config: Dict, overrides: Dict = None):
+        """Run cleanup for multiple orgs from configuration file.
+        overrides: optional dict with cleanup_type and flow_names; when provided (e.g. from interactive prompts), use for all orgs."""
+        overrides = overrides or {}
         print(f"\n🚀 Starting Batch Flow Cleanup")
         print(f"📊 Processing {len(config['orgs'])} organizations...")
         
@@ -1028,16 +1211,30 @@ class SalesforceFlowCleanup:
                 else:
                     is_production = False
                 
-                # Prepare user input for this org
+                # Use overrides when provided (interactive run with config), else use org config
+                cleanup_type = overrides['cleanup_type'] if 'cleanup_type' in overrides else org_config['cleanup_type']
+                flow_names = overrides['flow_names'] if 'flow_names' in overrides else org_config.get('flow_names', [])
+                
+                # Type 3 (browse) with pre-filled flow_names in config (e.g. silent): use as type 2
+                if cleanup_type == '3' and flow_names and not overrides:
+                    cleanup_type = '2'
+                # If first org used type 3 (browse), reuse the selected flow names for remaining orgs
+                elif cleanup_type == '3' and overrides.get('flow_names'):
+                    cleanup_type = '2'
+                    flow_names = overrides['flow_names']
+                
                 org_user_input = {
                     'instance': org_config['instance'],
-                    'cleanup_type': org_config['cleanup_type'],
+                    'cleanup_type': cleanup_type,
                     'is_production': is_production,
-                    'flow_names': org_config.get('flow_names', [])
+                    'flow_names': flow_names
                 }
                 
-                # Run cleanup for this org
-                self.run_cleanup(org_user_input)
+                # Run cleanup for this org; type 3 returns selected flow names for batch reuse
+                selected = self.run_cleanup(org_user_input)
+                if cleanup_type == '3' and selected:
+                    overrides['flow_names'] = selected
+                    overrides['cleanup_type'] = '2'
                 successful_orgs += 1
                 
             except Exception as e:
@@ -1058,16 +1255,41 @@ class SalesforceFlowCleanup:
         else:
             print("⚠️  No organizations were processed successfully")
 
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Salesforce Flow Version Cleanup - remove old Flow versions via Tooling API"
+    )
+    parser.add_argument(
+        "--silent",
+        action="store_true",
+        help="Headless mode: use config file as-is without prompting. Requires --config.",
+    )
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        help="Path to config file (e.g. configs/your_config.json). Required when using --silent.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_args()
     cleanup = SalesforceFlowCleanup()
-    user_input = cleanup.get_user_input()
+    user_input = cleanup.get_user_input(silent=args.silent, config_path=args.config)
     
     if user_input['mode'] == 'batch':
         # Batch mode - process multiple orgs
         print(f"\nBatch mode: Processing {len(user_input['config']['orgs'])} organizations")
         cleanup.instance_url = "Multiple Organizations"
         cleanup.setup_logging()
-        cleanup.run_batch_cleanup(user_input['config'])
+        overrides = None
+        if not user_input.get('silent', True):
+            overrides = {
+                'cleanup_type': user_input.get('cleanup_type'),
+                'flow_names': user_input.get('flow_names', []),
+            }
+        cleanup.run_batch_cleanup(user_input['config'], overrides=overrides)
     else:
         # Interactive mode - single org
         print(f"\nInstance: {user_input['instance']}")

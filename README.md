@@ -11,10 +11,12 @@ A comprehensive Python tool for cleaning up old Flow versions in Salesforce orgs
 - **Flexible Cleanup Options**:
   - Clean up all old Flow versions (not latest and not active)
   - Clean up specific Flow versions by name
+  - **Browse**: List flows with old versions (with version counts), then select one or many by number from the command line
 - **Bulk Delete**: Uses Salesforce Composite API for efficient bulk deletion
 - **Comprehensive Logging**: Detailed audit trails with masked sensitive data
 - **Deletion Lists**: Save what will be deleted before confirmation
-- **Silent Mode**: Use stored credentials for automated runs
+- **Silent Mode** (`--silent`): Headless runs using config as-is; no prompts (for automation/CI)
+- **Interactive Prompts**: When not using `--silent`, the tool asks for cleanup type, all vs specific flows, and any other config options
 - **Multi-Org Support**: Process multiple Salesforce orgs in a single batch operation
 
 ## Files
@@ -44,17 +46,42 @@ The tool organizes files into specific folders:
 
 ## Quick Start
 
-### Interactive Mode
+### Interactive Mode (guided; prompts for all options)
+
+When you run without `--silent`, the tool asks for everything that can be in the config: **cleanup type** (all old versions vs specific flows), **which flows** (if specific), instance, port, etc.
 
 ```bash
 python flow_cleanup.py
 ```
 
-### Batch Mode
+You can choose to use a config file or enter details manually. If you use a config file, you are still prompted for cleanup type and flow scope so you can override the config for that run.
 
-1. Create a configuration file based on `config_example.json` and save it in the `configs/` folder
-2. Run the script and select configuration file mode
-3. Choose from existing configs in `configs/` folder or specify a custom path
+### Batch Mode with prompts
+
+```bash
+python flow_cleanup.py --config configs/your_config.json
+```
+
+The script loads the config, then asks what type of cleanup you want and whether to clean all flows or specific flows (using config values as defaults). Your answers apply to all orgs in that run.
+
+### Headless / Silent Mode (no prompts)
+
+For automation or CI: use a config file as-is with no prompts. **Requires `--config`.**
+
+```bash
+python flow_cleanup.py --silent --config configs/your_config.json
+```
+
+All options (cleanup type, flow names, etc.) are taken from the config file.
+
+## Command-line options
+
+| Option          | Description                                                                                                                                                                            |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--silent`      | Headless mode: use config file as-is with no prompts. Requires `--config`.                                                                                                             |
+| `--config PATH` | Path to config file (e.g. `configs/your_config.json`). With `--silent`, required. Without `--silent`, optional; if provided, the script still prompts for cleanup type and flow scope. |
+
+Run `python flow_cleanup.py --help` to see options.
 
 ## Port Configuration
 
@@ -101,10 +128,10 @@ python flow_cleanup.py
 The script will:
 
 1. Ask if you want to use a configuration file or interactive mode
-   - If using config: Lists available configs from `configs/` folder or allows custom path
-2. Ask what type of cleanup you want to perform
-3. If specific flows: Ask for Flow API names to clean up
-4. Ask for your Salesforce instance URL
+   - If using config: Lists available configs from `configs/` folder or allows custom path; you are still prompted for cleanup options (type and flow scope) unless you use `--silent`
+2. Ask **what type of cleanup** you want: all old versions, specific flows by name, or browse (list flows with version counts and select by number)
+3. If specific flows: Ask for Flow API names. If browse: after connecting, show a numbered list like `MyFlow (3 versions)` and accept input like `1,3,5` or `all`
+4. Ask for your Salesforce instance URL (when not using a config)
 5. Ask for callback port (default 8080)
 6. Start a local server and open your browser for authentication
 7. Automatically receive the OAuth callback
@@ -145,6 +172,7 @@ python flow_cleanup.py
 ```
 
 When prompted, you can:
+
 - Select from existing config files in the `configs/` folder (numbered list)
 - Enter a custom path to a configuration file
 
@@ -152,16 +180,16 @@ When prompted, you can:
 
 #### Configuration File Options
 
-| Field                     | Required | Valid Options                                                     |
-| ------------------------- | -------- | ----------------------------------------------------------------- |
-| `instance`                | Yes      | Salesforce instance URL (e.g., `https://myorg.my.salesforce.com`) |
-| `client_id`               | Yes      | Connected App Consumer Key (15+ character string)                 |
-| `client_secret`           | No       | Connected App Consumer Secret (if required)                       |
-| `cleanup_type`            | No       | `"1"` (all old versions) or `"2"` (specific flows)                |
-| `flow_names`              | No       | Array of Flow API names (e.g., `["MyFlow", "AccountFlow"]`)       |
-| `skip_production_check`   | No       | `true` or `false` (default: `false`)                              |
-| `auto_confirm_production` | No       | `true` or `false` (default: `false`)                              |
-| `callback_port`           | No       | Integer 1024-65535 (default: `8080`)                              |
+| Field                     | Required | Valid Options                                                                                                                   |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `instance`                | Yes      | Salesforce instance URL (e.g., `https://myorg.my.salesforce.com`)                                                               |
+| `client_id`               | Yes      | Connected App Consumer Key (15+ character string)                                                                               |
+| `client_secret`           | No       | Connected App Consumer Secret (if required)                                                                                     |
+| `cleanup_type`            | No       | `"1"` (all old versions), `"2"` (specific flows), or `"3"` (browse: list then select; interactive only unless `flow_names` set) |
+| `flow_names`              | No       | Array of Flow API names (e.g., `["MyFlow", "AccountFlow"]`)                                                                     |
+| `skip_production_check`   | No       | `true` or `false` (default: `false`)                                                                                            |
+| `auto_confirm_production` | No       | `true` or `false` (default: `false`)                                                                                            |
+| `callback_port`           | No       | Integer 1024-65535 (default: `8080`)                                                                                            |
 
 ### Port Configuration
 
@@ -226,6 +254,7 @@ After completing cleanup in interactive mode, the tool offers to save your confi
 3. **Auto-named config**: Automatically generate a filename based on your instance URL
 
 Saved configurations include:
+
 - Instance URL
 - Client ID and Secret (if provided)
 - Cleanup type and flow names
