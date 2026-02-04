@@ -31,6 +31,18 @@ from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import List, Dict, Optional, Tuple
 
+
+def _prompt(prompt: str, default: Optional[str] = None) -> str:
+    """Prompt for input; return value or default. If user types 'exit', exit the tool."""
+    value = input(prompt).strip()
+    if value.lower() == 'exit':
+        print("Exiting.")
+        sys.exit(0)
+    if default is not None and value == '':
+        return default
+    return value
+
+
 class CallbackHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith('/callback'):
@@ -323,7 +335,7 @@ class SalesforceFlowCleanup:
             return False
     
     def offer_save_config(self, user_input: Dict) -> None:
-        """Offer to save configuration after interactive mode"""
+        """Offer to save configuration after interactive mode (including when user chose not to use a config)."""
         if not self.client_id:
             # No credentials to save
             return
@@ -331,7 +343,7 @@ class SalesforceFlowCleanup:
         print("\n" + "="*60)
         print("💾 Save Configuration")
         print("="*60)
-        save_choice = input("Would you like to save this configuration for future use? (y/n): ").strip().lower()
+        save_choice = _prompt("Would you like to save this configuration for future use? (y/n): ").lower()
         
         if save_choice not in ['y', 'yes']:
             return
@@ -345,7 +357,7 @@ class SalesforceFlowCleanup:
                 print(f"  {i}. {config_file}")
             print(f"  {len(existing_configs) + 1}. Create new configuration file")
             
-            choice = input(f"\nSelect option (1-{len(existing_configs) + 1}): ").strip()
+            choice = _prompt(f"\nSelect option (1-{len(existing_configs) + 1}): ")
             
             try:
                 choice_num = int(choice)
@@ -355,7 +367,7 @@ class SalesforceFlowCleanup:
                     self.save_config(user_input, config_filename, add_to_existing=True)
                 elif choice_num == len(existing_configs) + 1:
                     # Create new config
-                    config_name = input("Enter name for new configuration file (without .json): ").strip()
+                    config_name = _prompt("Enter name for new configuration file (without .json): ")
                     if config_name:
                         self.save_config(user_input, config_name, add_to_existing=False)
                     else:
@@ -366,7 +378,7 @@ class SalesforceFlowCleanup:
                 print("❌ Invalid input. Configuration not saved.")
         else:
             # No existing configs, create new
-            config_name = input("Enter name for configuration file (without .json, or press Enter for default): ").strip()
+            config_name = _prompt("Enter name for configuration file (without .json, or press Enter for default): ", default="")
             if config_name:
                 self.save_config(user_input, config_name, add_to_existing=False)
             else:
@@ -390,7 +402,7 @@ class SalesforceFlowCleanup:
             type_prompt += f" [default: {default_type}]"
         type_prompt += ": "
         
-        choice = input(type_prompt).strip() or default_type
+        choice = _prompt(type_prompt, default_type)
         if choice not in ('1', '2', '3'):
             choice = '1'
         
@@ -403,7 +415,7 @@ class SalesforceFlowCleanup:
             print("(Press Enter on an empty line when done)")
             
             while True:
-                flow_name = input("Flow API name: ").strip()
+                flow_name = _prompt("Flow API name: ", default="")
                 if not flow_name:
                     break
                 flow_names.append(flow_name)
@@ -422,7 +434,8 @@ class SalesforceFlowCleanup:
         """Get user input for instance and cleanup options.
         When silent=True, config_path must be provided; config is used as-is (headless).
         When silent=False, user is prompted for all options (cleanup type, all/specific flows, etc.)."""
-        print("=== Salesforce Flow Version Cleanup Tool ===\n")
+        print("=== Salesforce Flow Version Cleanup Tool ===")
+        print("Type 'exit' at any prompt to quit.\n")
         
         # Headless: require config, no prompts
         if silent:
@@ -442,7 +455,7 @@ class SalesforceFlowCleanup:
         config_file = config_path
         
         if not config_file:
-            use_config_choice = input("Do you want to use a configuration file? (y/n): ").strip().lower()
+            use_config_choice = _prompt("Do you want to use a configuration file? (y/n): ").lower()
             use_config = use_config_choice in ['y', 'yes']
         
         if use_config or config_file:
@@ -453,19 +466,19 @@ class SalesforceFlowCleanup:
                     for i, cfg in enumerate(existing_configs, 1):
                         print(f"  {i}. {cfg}")
                     print(f"  {len(existing_configs) + 1}. Enter custom path")
-                    choice = input(f"\nSelect option (1-{len(existing_configs) + 1}): ").strip()
+                    choice = _prompt(f"\nSelect option (1-{len(existing_configs) + 1}): ")
                     try:
                         choice_num = int(choice)
                         if 1 <= choice_num <= len(existing_configs):
                             config_file = os.path.join("configs", existing_configs[choice_num - 1])
                         elif choice_num == len(existing_configs) + 1:
-                            config_file = input("Enter path to configuration file: ").strip()
+                            config_file = _prompt("Enter path to configuration file: ")
                         else:
                             config_file = None
                     except ValueError:
                         config_file = None
                 else:
-                    config_file = input("Enter path to configuration file: ").strip()
+                    config_file = _prompt("Enter path to configuration file: ")
             
             if config_file:
                 path_to_load = config_file
@@ -490,7 +503,7 @@ class SalesforceFlowCleanup:
                     print("Falling back to interactive mode...")
         
         # Interactive mode: no config or load failed — ask for everything
-        instance = input("Enter your Salesforce instance URL (e.g., mycompany.my.salesforce.com): ").strip()
+        instance = _prompt("Enter your Salesforce instance URL (e.g., mycompany.my.salesforce.com): ")
         if not instance.startswith('http'):
             instance = f"https://{instance}"
         if not instance.endswith('.my.salesforce.com'):
@@ -499,7 +512,7 @@ class SalesforceFlowCleanup:
         print("\n=== OAuth Callback Configuration ===")
         print("The script will start a local server to receive OAuth callbacks.")
         print("Default port: 8080")
-        port_input = input("Enter callback port (press Enter for default 8080): ").strip()
+        port_input = _prompt("Enter callback port (press Enter for default 8080): ", default="")
         if port_input:
             try:
                 port = int(port_input)
@@ -531,12 +544,12 @@ class SalesforceFlowCleanup:
         print("\n=== Connected App Configuration ===")
         print("Enter your Salesforce Connected App credentials:")
         
-        client_id = input("Client ID (Consumer Key): ").strip()
+        client_id = _prompt("Client ID (Consumer Key): ")
         if not client_id:
             print("❌ Client ID is required")
             return None, None
         
-        client_secret = input("Client Secret (Consumer Secret) [optional]: ").strip()
+        client_secret = _prompt("Client Secret (Consumer Secret) [optional]: ", default="")
         
         return client_id, client_secret
     
@@ -889,7 +902,7 @@ class SalesforceFlowCleanup:
         print()
         print("Enter the number(s) to clean up, separated by commas or spaces (e.g. 1,3,5 or 1 3 5), or 'all':")
         
-        raw = input("Selection: ").strip().lower()
+        raw = _prompt("Selection: ", default="").lower()
         if not raw:
             print("❌ No selection entered. Exiting.")
             return []
@@ -1154,7 +1167,7 @@ class SalesforceFlowCleanup:
         if len(flows_to_delete) > 5:
             print(f"   ... and {len(flows_to_delete) - 5} more")
         
-        confirm = input(f"\nAre you sure you want to delete {len(flows_to_delete)} Flow versions? Type 'DELETE' to confirm: ").strip()
+        confirm = _prompt(f"\nAre you sure you want to delete {len(flows_to_delete)} Flow versions? Type 'DELETE' to confirm: ")
         if confirm != 'DELETE':
             print("❌ Operation cancelled by user.")
             self.log_message("Operation cancelled by user")
@@ -1308,7 +1321,7 @@ if __name__ == "__main__":
             
             if is_production:
                 print(f"\n⚠️  WARNING: This is a PRODUCTION instance!")
-                confirm = input("Are you sure you want to proceed? Type 'YES' to continue: ").strip()
+                confirm = _prompt("Are you sure you want to proceed? Type 'YES' to continue: ")
                 if confirm != 'YES':
                     print("Operation cancelled.")
                     cleanup.log_message("Operation cancelled: User declined production confirmation")
